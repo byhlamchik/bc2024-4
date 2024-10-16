@@ -1,56 +1,85 @@
 const http = require('http');
-const {Command} = require("commander");
-const fs = require('fs');
-const path = require("node:path");
+const fs = require('fs').promises;
+const path = require('path');
+const superagent = require('superagent');
+const { Command } = require('commander');
 
-let program = new Command();
-
+// Ініціалізація командера для обробки параметрів командного рядка
+const program = new Command();
 program
-    .option('-h, --host <adress>', 'Input file path')
-    .option('-p, --port <port>', 'Output file path')
-    .option('-c, --сache <path>', 'Display result')
+    .requiredOption('-h, --host <host>', 'Host for the server')
+    .requiredOption('-p, --port <port>', 'Port for the server')
+    .requiredOption('-c, --cache <cache>', 'Path to the cache directory');
 
 program.parse(process.argv);
-
 const options = program.opts();
 
-if (!options.host || !options.port) {
-    console.error("Specify port and address correctly")
+// Перевірка параметрів
+if (!options.host || !options.port || !options.cache) {
+    console.error('Missing required options');
     process.exit(1);
 }
 
-const hostname = options.host; // or 'localhost'
-const port = Number(options.port);
-
-const getRequestBody = (req) => {
-    return new Promise((resolve, reject) => {
-        let body = '';
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-        req.on('end', () => {
-            resolve(body);
-        });
-        req.on('error', (err) => {
-            reject(err);
-        });
-    });
-};
-
+// Створюємо сервер
 const server = http.createServer(async (req, res) => {
-    res.setHeader('Content-Type', 'application/json');
+    const filePath = `${options.cache+req.url}.jpg`
 
     if (req.method === 'GET') {
-         res.statusCode = 200;
-         res.end("req");
+        try {
+            // Перевіряємо, чи є файл у кеші
+            const data = await fs.readFile(filePath);
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.end(data);
+        } catch (err) {
+            // Якщо файл не знайдено в кеші, запитуємо з http.cat
+            try {
+                try {
+                    await fs.mkdir(options.cache)
+                } catch (e) {}
+                const catResponse = await superagent.get(`https://http.cat/${req.url}`);
+                await fs.writeFile(filePath, Buffer.from(catResponse.body));
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'image/jpeg');
+                res.end(catResponse.body);
+            } catch (err) {
+                res.statusCode = 404;
+                res.end('Image not found\n');
+            }
+        }
     } else if (req.method === 'PUT') {
+        // Обробка PUT запиту для збереження зображення у кеш
+        try {
+            let body = [];
+            req.on('data', chunk => body.push(chunk));
+            req.on('end', async () => {
+                const buffer = Buffer.concat(body);
+                await fs.writeFile(filePath, buffer);
+                res.statusCode = 201;
+                res.end('Image saved\n');
+            });
+        } catch (err) {
+            res.statusCode = 500;
+            res.end('Error saving image\n');
+        }
     } else if (req.method === 'DELETE') {
+        // Обробка DELETE запиту для видалення зображення з кешу
+        try {
+            await fs.unlink(filePath);
+            res.statusCode = 200;
+            res.end('Image deleted\n');
+        } catch (err) {
+            res.statusCode = 404;
+            res.end('Image not found\n');
+        }
     } else {
+        // Відповідь на запити з іншими методами
         res.statusCode = 405;
-        res.end(JSON.stringify({message: 'Method not allowed'}));
+        res.end('Method not allowed\n');
     }
 });
 
-server.listen(port, hostname, () => {
-    console.log(`Server running at http://${hostname}:${port}/`);
+// Запуск сервера
+server.listen(options.port, options.host, () => {
+    console.log(`Server running at http://${options.host}:${options.port}/`);
 });
