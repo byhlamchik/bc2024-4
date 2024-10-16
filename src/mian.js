@@ -4,7 +4,6 @@ const path = require('path');
 const superagent = require('superagent');
 const { Command } = require('commander');
 
-// Ініціалізація командера для обробки параметрів командного рядка
 const program = new Command();
 program
     .requiredOption('-h, --host <host>', 'Host for the server')
@@ -14,7 +13,6 @@ program
 program.parse(process.argv);
 const options = program.opts();
 
-// Перевірка параметрів
 if (!options.host || !options.port || !options.cache) {
     console.error('Missing required options');
     process.exit(1);
@@ -26,13 +24,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET') {
         try {
-            // Перевіряємо, чи є файл у кеші
             const data = await fs.readFile(filePath);
             res.statusCode = 200;
             res.setHeader('Content-Type', 'image/jpeg');
             res.end(data);
         } catch (err) {
-            // Якщо файл не знайдено в кеші, запитуємо з http.cat
             try {
                 try {
                     await fs.mkdir(options.cache)
@@ -48,7 +44,6 @@ const server = http.createServer(async (req, res) => {
             }
         }
     } else if (req.method === 'PUT') {
-        // Обробка PUT запиту для збереження зображення у кеш
         try {
             let body = [];
             req.on('data', chunk => body.push(chunk));
@@ -63,7 +58,6 @@ const server = http.createServer(async (req, res) => {
             res.end('Error saving image\n');
         }
     } else if (req.method === 'DELETE') {
-        // Обробка DELETE запиту для видалення зображення з кешу
         try {
             await fs.unlink(filePath);
             res.statusCode = 200;
@@ -73,13 +67,11 @@ const server = http.createServer(async (req, res) => {
             res.end('Image not found\n');
         }
     } else {
-        // Відповідь на запити з іншими методами
         res.statusCode = 405;
         res.end('Method not allowed\n');
     }
 });
 
-// Запуск сервера
 server.listen(options.port, options.host, () => {
     console.log(`Server running at http://${options.host}:${options.port}/`);
 });
